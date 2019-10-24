@@ -1,36 +1,82 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
-	"time"
-
-	"golang.org/x/net/websocket"
+	"net/url"
+	"strings"
 )
 
-type Message struct {
-	Text string `json:"text"`
+type Client struct {
+	id, ip string
 }
 
-type hub struct {
-	clients          map[string]*websocket.Conn
-	addClientChan    chan *websocket.Conn
-	removeClientChan chan *websocket.Conn
-	broadcastChan    chan Message
+type BroadcastMessage struct {
+	Message, UserID string
 }
 
-func (h *hub) removeClient(conn *websocket.Conn) {
-	delete(h.clients, conn.LocalAddr().String())
-}
-func (h *hub) addClient(conn *websocket.Conn) {
-	h.clients[conn.RemoteAddr().String()] = conn
+func (c *Client) Send(m BroadcastMessage) error {
+	url := fmt.Sprintf("http://%s:8080/message?id=%s&msg=%s", c.ip, m.UserID, url.QueryEscape(m.Message))
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("get response from client: %s, body: %s\n", c.ip, err)
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Status code is %d", resp.StatusCode)
+		return fmt.Errorf("Invalid Sttaus code: %d", resp.StatusCode)
+	}
+
+	fmt.Printf("Send msg to client: %s, from: %s. msg:%s\n", c.id, m.UserID, m.Message)
+	return nil
 }
 
-func (h *hub) broadcastMessage(m Message) {
-	for _, conn := range h.clients {
-		err := websocket.JSON.Send(conn, m)
+// FileSystem custom file system handler
+type FileSystem struct {
+	fs http.FileSystem
+}
+
+// Open opens file
+func (fs FileSystem) Open(path string) (http.File, error) {
+	f, err := fs.fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("get request open file", path)
+	return f, nil
+}
+
+type Hub struct {
+	clients          map[string]*Client
+	addClientChan    chan *Client
+	removeClientChan chan *Client
+	broadcastChan    chan BroadcastMessage
+}
+
+func NewHub() *Hub {
+	return &Hub{
+		clients:          make(map[string]*Client),
+		addClientChan:    make(chan *Client),
+		removeClientChan: make(chan *Client),
+		broadcastChan:    make(chan BroadcastMessage),
+	}
+}
+func (h *Hub) removeClient(c *Client) {
+	delete(h.clients, c.id)
+}
+
+func (h *Hub) addClient(c *Client) {
+	fmt.Printf("client id: %s was added", c.id)
+	h.clients[c.id] = c
+}
+
+func (h *Hub) broadcastMessage(m BroadcastMessage) {
+	for _, client := range h.clients {
+		err := client.Send(m)
 		if err != nil {
 			fmt.Println("Error broadcasting message: ", err)
 			return
@@ -38,7 +84,7 @@ func (h *hub) broadcastMessage(m Message) {
 	}
 }
 
-func (h *hub) run() {
+func (h *Hub) Run() {
 	for {
 		select {
 		case conn := <-h.addClientChan:
@@ -51,59 +97,77 @@ func (h *hub) run() {
 	}
 }
 
-func newHub() *hub {
-	return &hub{
-		clients:          make(map[string]*websocket.Conn),
-		addClientChan:    make(chan *websocket.Conn),
-		removeClientChan: make(chan *websocket.Conn),
-		broadcastChan:    make(chan Message),
-	}
-}
+func main() {
+	port := ":8080"
+	hub := NewHub()
+	fmt.Println("start, bind port:", port)
 
-func handler(ws *websocket.Conn, h *hub) {
-	go h.run()
-	h.addClientChan <- ws
-	for {
-		var m Message
-		err := websocket.JSON.Receive(ws, &m)
-		if err != nil {
-			h.broadcastChan <- Message{err.Error()}
-			h.removeClient(ws)
+	http.HandleFunc("/bc", func(w http.ResponseWriter, r *http.Request) {
+		//Authenticate, add to room list
+		keys, ok := r.URL.Query()["msg"]
+		if !ok || len(keys[0]) < 1 {
+			rerr := "Url Param 'msg' is missing"
+			log.Println(rerr)
+			fmt.Fprintln(w, rerr)
 			return
 		}
-		fmt.Printf("server side recive message %+v", m)
-		h.broadcastChan <- m
-	}
-}
+		msg := keys[0]
 
-func mockedIP() string {
-	var arr [4]int
-	for i := 0; i < 4; i++ {
-		rand.Seed(time.Now().UnixNano())
-		arr[i] = rand.Intn(256)
-	}
-	return fmt.Sprintf("%d.%d.%d.%d", arr[0], arr[1], arr[2], arr[3])
-}
+		keys, ok = r.URL.Query()["id"]
+		if !ok || len(keys[0]) < 1 {
+			rerr := "Url Param 'id' is missing"
+			log.Println(rerr)
+			fmt.Fprintln(w, rerr)
+			return
+		}
+		id := keys[0]
+		// Query()["key"] will return an array of items,
+		// we only want the single item.
+		m := BroadcastMessage{
+			Message: msg,
+			UserID:  id,
+		}
+		hub.broadcastMessage(m)
 
-func server(port string) error {
-	h := newHub()
-	mux := http.NewServeMux()
-	mux.Handle("/", websocket.Handler(func(ws *websocket.Conn) {
-		handler(ws, h)
-	}))
-
-	mux.HandleFunc("/client", func(w http.ResponseWriter, r *http.Request) {
-		//Authenticate..
-		ip := mockedIP()
-		fmt.Println("generate a new client:", ip)
-		fmt.Fprintf(w, "%s", ip)
 	})
 
-	s := http.Server{Addr: ":" + port, Handler: mux}
-	return s.ListenAndServe()
-}
+	resources := "/resources"
+	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		//Authenticate, add to room list
+		keys, ok := r.URL.Query()["id"]
+		if !ok || len(keys[0]) < 1 {
+			rerr := "Url Param 'id' is missing"
+			log.Println(rerr)
+			fmt.Fprintln(w, rerr)
+			return
+		}
 
-func main() {
-	fmt.Println("hello")
-	log.Fatal(server("8081"))
+		// Query()["key"] will return an array of items,
+		// we only want the single item.
+		id := keys[0]
+		fmt.Println("the client ip ", strings.Split(r.RemoteAddr, ":")[0])
+		c := &Client{
+			id: id,
+			ip: strings.Split(r.RemoteAddr, ":")[0],
+		}
+		hub.addClient(c)
+
+		fmt.Printf("the client ip: %s\n", r.RemoteAddr)
+		m := make(map[string]string)
+		m["resources"] = "/resource/rooms/1/"
+		str, err := json.Marshal(m)
+		fmt.Println("the response to client", string(str))
+		if err != nil {
+			fmt.Fprintln(w, "failed decode response JSON"+err.Error())
+		}
+		fmt.Fprint(w, string(str))
+
+	})
+
+	directory := fmt.Sprintf(".%s", resources)
+	fmt.Println("init static files server path:", directory)
+	fs := http.FileServer(FileSystem{http.Dir(directory)})
+	http.Handle(fmt.Sprintf("%s/", resources), http.StripPrefix(resources, fs))
+
+	log.Fatal(http.ListenAndServe(port, nil))
 }
