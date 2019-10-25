@@ -12,10 +12,34 @@ import (
 )
 
 //AuthResponse response to client who pass authentication
-type AuthResponse struct {
-	Resources string
+type authResponse struct {
+	Error     string `json:"error"`
+	Resources string `json:"resources"`
+	Success   bool   `json:"success"`
 }
 
+func newSuccessAuthResponse(resources string) authResponse {
+	return authResponse{
+		Resources: resources,
+		Success:   true,
+	}
+}
+
+func newFailedAuthResponse(err error) authResponse {
+	return authResponse{
+		Error: err.Error(),
+	}
+}
+
+func handleAuthResponse(w http.ResponseWriter, auth authResponse) {
+	str, err := json.Marshal(auth)
+	if err != nil {
+		fmt.Fprintln(w, fmt.Sprintf("failed decode response JSON, error: %s", err.Error()))
+		return
+	}
+	log.Printf("response to client: %s", str)
+	fmt.Fprint(w, string(str))
+}
 func getURLParam(r *http.Request, key string) (string, error) {
 	keys, ok := r.URL.Query()[key]
 	if !ok || len(keys[0]) < 1 {
@@ -50,31 +74,29 @@ func broadcastHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 func authHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//TODO: Authenticate user
-		id, err := getURLParam(r, "id")
+		user, err := getURLParam(r, "user")
 		if err != nil {
-			log.Println(err)
-			fmt.Fprintln(w, err)
+			handleAuthResponse(w, newFailedAuthResponse(err))
 			return
 		}
 
-		h.AddClient(&client.Client{
-			ID: id,
+		pass, err := getURLParam(r, "pass")
+		if err != nil {
+			handleAuthResponse(w, newFailedAuthResponse(err))
+			return
+		}
+
+		err = h.AuthUser(user, pass)
+		if err != nil {
+			handleAuthResponse(w, newFailedAuthResponse(err))
+			return
+		}
+
+		h.AddClient(&client.MobileClient{
+			ID: user,
 			IP: strings.Split(r.RemoteAddr, ":")[0],
 		})
-
-		roomid, err := getURLParam(r, "roomid")
-		if err != nil {
-			log.Println(err)
-			fmt.Fprintln(w, err)
-			return
-		}
-		str, err := json.Marshal(AuthResponse{
-			Resources: fmt.Sprintf("%s/rooms/%s/", h.GetResourcesPath(), roomid),
-		})
-		if err != nil {
-			fmt.Fprintln(w, "failed decode response JSON"+err.Error())
-		}
-		fmt.Fprint(w, string(str))
+		handleAuthResponse(w, newSuccessAuthResponse(fmt.Sprintf("%s/rooms/1/", h.GetResourcesPath())))
 	}
 }
 
