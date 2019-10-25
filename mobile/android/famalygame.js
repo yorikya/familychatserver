@@ -1,25 +1,7 @@
-var _clientid ="yuri@gmail.com"
-var _serverip = "10.0.0.2:8080"
+var _clientid ="yuri"
+var _serverhost = "http://10.0.0.2:8080"
 var _client_data =""
 
-
-function SendLoginRequest(host, clientid) {
- //Send request to remote server.
-    var url = "http://"+host;
-    var path = "/auth";
-    var params = "roomid=1|id="+clientid;
-    app.HttpRequest( "get", url, path, params, handleReply );   
-}
-
-function handleReply( error, reply )
-{
-    if( error ) alert( error );
-    else
-    {
-        alert( reply );
-        _client_data = JSON.parse(reply)
-    }
-}
 
 //Handle download completion.
 function dload_OnDownload( file )
@@ -136,6 +118,32 @@ function OnStart()
 // 	setInterval( ShowServerResource, 1000 );
 }
 
+function SendLoginRequest(user, pass) {
+ //Send request to remote server.
+    var path = "/auth";
+    var params = "user="+user+"|pass="+pass;
+    app.HttpRequest( "get", _serverhost, path, params, function ( error, reply )
+    {
+        if( error ) alert( error );
+        else
+        {
+            r = JSON.parse(reply);
+            if (r.success == true) {
+                laySlide.Animate( "SlideFromLeft" );
+            } else {
+                alert( r.error)
+            }
+            
+        }
+    });   
+}
+
+//Called when user touches our slide button.
+function loginBtnOnTouch()
+{
+    SendLoginRequest(userID.GetText(), password.GetText())   
+}
+
 function ShowServerResource() {
      app.Debug("update resource path to:" + _client_data.resources);
 }
@@ -175,11 +183,7 @@ function HandleReply( httpRequest )
 } 
 
 
-//Called when user touches our slide button.
-function loginBtnOnTouch()
-{
-	laySlide.Animate( "SlideFromLeft" );
-}
+
 
 //Called when user touches our back button.
 function btnBack_OnTouch()
@@ -190,6 +194,6 @@ function btnBack_OnTouch()
 //Called when user touches our button.
 function btn_OnTouch()
 {
-    SendRequest("http://"+_serverip+"/broadcast?id="+_clientid+"&msg="+ edt.GetText());
+    SendRequest(_serverhost+"/broadcast?id="+_clientid+"&msg="+ edt.GetText());
     edt.SetText("");
 }
