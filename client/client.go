@@ -1,22 +1,24 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-
-	"github.com/yorikya/familychatserver/db"
+	"os"
 )
 
 //Client interface for chat clients
 type Client interface {
-	Send(m BroadcastMessage) error
+	Send(m BroadcastMessage)
 	GetID() string
+	Close()
 }
 
 // BroadcastMessage message from a client targeted to brodcasting to clients
 type BroadcastMessage struct {
+	MessageID int
 	//Message user message
 	Message,
 	//UserID user ID
@@ -31,46 +33,119 @@ type MobileClient struct {
 	IP,
 	//Name client name
 	Name string
+
+	writeChan chan BroadcastMessage
 }
 
-func (c *MobileClient) GetID() string {
-	return c.ID
+func NewMobileClient(id, ip, name string) *MobileClient {
+	c := &MobileClient{
+		ID:        id,
+		IP:        ip,
+		Name:      name,
+		writeChan: make(chan BroadcastMessage),
+	}
+	go c.run()
+
+	return c
 }
 
-//Send sends broadcast message to a client
-func (c *MobileClient) Send(m BroadcastMessage) error {
+func (c *MobileClient) sendMessage(m BroadcastMessage) error {
 	url := fmt.Sprintf("http://%s:8080/message?id=%s&msg=%s", c.IP, m.UserID, url.QueryEscape(m.Message))
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("get response from client: %s, body: %s\n", c.IP, err)
-		return err
+		return fmt.Errorf("get error from client: %s, error: %s", c.IP, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Status code is %d", resp.StatusCode)
-		return fmt.Errorf("Invalid Sttaus code: %d", resp.StatusCode)
+		return fmt.Errorf("get error status code from client: %s, status: %d", c.IP, resp.StatusCode)
 	}
 
 	log.Printf("Send msg to client: %s, from: %s. msg:%s\n", c.ID, m.UserID, m.Message)
 	return nil
 }
 
-//DBClient represent database client
-type DBClient struct {
-	ID     string
-	msgNum int
-	DB     *db.DataBase
+func (c *MobileClient) run() {
+	for m := range c.writeChan {
+		err := c.sendMessage(m)
+		if err != nil {
+			log.Println("failed send messge to file error:", err)
+		}
+	}
 }
 
-func (c *DBClient) Send(m BroadcastMessage) error {
-	err := c.DB.AddChatLog(fmt.Sprintf("%d", c.msgNum), fmt.Sprintf("%s|%s", m.UserID, m.Message))
+func (c *MobileClient) GetID() string {
+	return c.ID
+}
+
+func (c *MobileClient) Close() {
+
+}
+
+//Send sends broadcast message to a client
+func (c *MobileClient) Send(m BroadcastMessage) {
+	c.writeChan <- m
+}
+
+func NewFileClient(roomID string) (*FileClient, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	path := fmt.Sprintf("%s/resources/rooms/%s/log.json", dir, roomID)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0660)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("FileClient creates file :", path)
+	c := &FileClient{
+		writeChan: make(chan BroadcastMessage),
+		roomID:    roomID,
+		file:      f,
+		ID:        fmt.Sprintf("log-file-writer-room-%s", roomID),
+	}
+
+	go c.run()
+
+	return c, nil
+}
+
+type FileClient struct {
+	ID        string
+	msgNum    int
+	file      *os.File
+	roomID    string
+	writeChan chan BroadcastMessage
+}
+
+//run starts comunication channel listeninig
+func (c *FileClient) run() {
+	for m := range c.writeChan {
+		err := c.writeLine(m)
+		if err != nil {
+			log.Println("failed send messge to file error:", err)
+		}
+	}
+}
+
+func (c FileClient) writeLine(m BroadcastMessage) error {
+	m.MessageID = c.msgNum
+	str, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
+	c.file.WriteString(fmt.Sprintf("%s\n", string(str)))
 	c.msgNum++
 	return nil
 }
+func (c *FileClient) Send(m BroadcastMessage) {
+	c.writeChan <- m
+}
 
-func (c *DBClient) GetID() string {
+func (c *FileClient) GetID() string {
 	return c.ID
+}
+
+func (c *FileClient) Close() {
+	c.file.Close()
 }

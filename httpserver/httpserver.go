@@ -92,10 +92,7 @@ func authHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.AddClient(&client.MobileClient{
-			ID: user,
-			IP: strings.Split(r.RemoteAddr, ":")[0],
-		})
+		h.AddClient(client.NewMobileClient(user, strings.Split(r.RemoteAddr, ":")[0], user))
 		handleAuthResponse(w, newSuccessAuthResponse(fmt.Sprintf("%s/rooms/1/", h.GetResourcesPath())))
 	}
 }

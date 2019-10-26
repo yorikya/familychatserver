@@ -30,11 +30,19 @@ func NewHub(d *db.DataBase) *Hub {
 	}
 	go h.run()
 
-	h.AddClient(&client.DBClient{
-		ID: "logfilewriter",
-		DB: d,
-	})
+	c, err := client.NewFileClient("1")
+	if err != nil {
+		panic(err)
+	}
+
+	h.AddClient(c)
 	return h
+}
+
+func (h *Hub) Close() {
+	for _, client := range h.clients {
+		client.Close()
+	}
 }
 
 //AuthUser authenticated user password on success return true and error nil
@@ -61,17 +69,13 @@ func (h *Hub) removeClient(c client.Client) {
 }
 
 func (h *Hub) addClient(c client.Client) {
-	log.Printf("client id: %s was added", c.GetID())
+	log.Printf("client id: '%s' was added", c.GetID())
 	h.clients[c.GetID()] = c
 }
 
 func (h *Hub) broadcastMessage(m client.BroadcastMessage) {
 	for _, client := range h.clients {
-		err := client.Send(m)
-		if err != nil {
-			log.Println("Error broadcasting message: ", err)
-			return
-		}
+		go client.Send(m)
 	}
 }
 
