@@ -85,10 +85,7 @@ func broadcastHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.BroadcastMessage(client.BroadcastMessage{
-			Message: msg,
-			UserID:  id,
-		})
+		h.BroadcastMessage(client.NewBroadcastMessage(id, msg))
 	}
 }
 

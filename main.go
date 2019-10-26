@@ -11,7 +11,9 @@ import (
 func main() {
 	port := ":8080"
 	d := db.NewDB()
-	h := hub.NewHub(d)
+	defer d.Close()
+
+	h := hub.NewHub(d, "1")
 	defer h.Close()
 
 	log.Fatal(httpserver.Start(h, port))

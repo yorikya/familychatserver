@@ -9,26 +9,17 @@ import (
 
 //DataBase app data database
 type DataBase struct {
-	db                *bolt.DB
-	filePath          string
-	usersAuthBucket   string
-	usersRoomsBuckets string
+	db              *bolt.DB
+	filePath        string
+	usersAuthBucket string
 }
 
-func (d *DataBase) createBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
+func (d *DataBase) createBucketTX(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
 	b, err := tx.CreateBucket([]byte(name))
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to create '%s' bucket", name)
 	}
 	return b, nil
-}
-
-func (d *DataBase) makeRoomBucket(tx *bolt.Tx, roomID string) error {
-	_, err := d.createBucket(tx, fmt.Sprintf("%s_%s", d.usersRoomsBuckets, roomID))
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (d *DataBase) createAuthUsers() error {
@@ -44,17 +35,23 @@ func (d *DataBase) createAuthUsers() error {
 	return nil
 }
 
+func (d *DataBase) CreateBucket(name string) error {
+	//Create bucket
+	return d.db.Update(func(tx *bolt.Tx) error {
+		// authentication bucket
+		_, err := d.createBucketTX(tx, name)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func (d *DataBase) init() {
 	//Create buckets
 	d.db.Update(func(tx *bolt.Tx) error {
 		// authentication bucket
-		_, err := d.createBucket(tx, d.usersAuthBucket)
-		if err != nil {
-			return err
-		}
-
-		// rooms buckets
-		err = d.makeRoomBucket(tx, "1")
+		_, err := d.createBucketTX(tx, d.usersAuthBucket)
 		if err != nil {
 			return err
 		}
@@ -94,6 +91,10 @@ func (d *DataBase) GetAuthUser(name string) (val string, err error) {
 	return
 }
 
+func (d *DataBase) Close() {
+	d.db.Close()
+}
+
 //NewDB starts a new DB
 func NewDB() *DataBase {
 	filePath := "db/bolt.db"
@@ -103,10 +104,9 @@ func NewDB() *DataBase {
 	}
 
 	database := &DataBase{
-		db:                boltDB,
-		filePath:          filePath,
-		usersRoomsBuckets: "usersRoom",
-		usersAuthBucket:   "usersAuth",
+		db:              boltDB,
+		filePath:        filePath,
+		usersAuthBucket: "usersAuth",
 	}
 
 	database.init()

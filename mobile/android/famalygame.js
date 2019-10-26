@@ -136,7 +136,7 @@ function sendLoginRequest(user, pass) {
 //Handle servlet requests. 
 function onServlet( request, info ) { 
 	serv.SetResponse( "Got it!" ); 
-    chat_converse_lst.AddItem(request.id, request.msg + "\n\n[10:52]");
+    chat_converse_lst.AddItem(request.id, request.msg + "\n\n" + request.ts);
     chat_converse_lst.ScrollToItemByIndex(chat_converse_lst.GetLength());
 } 
 

@@ -13,29 +13,36 @@ type Hub struct {
 	clients          map[string]client.Client
 	addClientChan    chan client.Client
 	removeClientChan chan client.Client
-	broadcastChan    chan client.BroadcastMessage
+	broadcastChan    chan *client.BroadcastMessage
 	resourcePath     string
 	dataBase         *db.DataBase
+	roomID           string
+	usersRoomPref    string
 }
 
 //NewHub return a new Hub
-func NewHub(d *db.DataBase) *Hub {
+func NewHub(d *db.DataBase, roomID string) *Hub {
 	h := &Hub{
 		clients:          make(map[string]client.Client),
 		addClientChan:    make(chan client.Client),
 		removeClientChan: make(chan client.Client),
-		broadcastChan:    make(chan client.BroadcastMessage),
+		broadcastChan:    make(chan *client.BroadcastMessage),
 		resourcePath:     "/resources",
 		dataBase:         d,
+		roomID:           roomID,
+		usersRoomPref:    "usersRoom",
 	}
+	//Create users room bucket
+	h.dataBase.CreateBucket(fmt.Sprintf("%s%s", h.usersRoomPref, h.roomID))
+
 	go h.run()
 
-	c, err := client.NewFileClient("1")
+	c, err := client.NewFileClient(roomID)
 	if err != nil {
 		panic(err)
 	}
-
 	h.AddClient(c)
+
 	return h
 }
 
@@ -73,7 +80,7 @@ func (h *Hub) addClient(c client.Client) {
 	h.clients[c.GetID()] = c
 }
 
-func (h *Hub) broadcastMessage(m client.BroadcastMessage) {
+func (h *Hub) broadcastMessage(m *client.BroadcastMessage) {
 	for _, client := range h.clients {
 		go client.Send(m)
 	}
@@ -94,7 +101,7 @@ func (h *Hub) run() {
 }
 
 //BroadcastMessage write message to the broadcast channel
-func (h *Hub) BroadcastMessage(m client.BroadcastMessage) {
+func (h *Hub) BroadcastMessage(m *client.BroadcastMessage) {
 	h.broadcastChan <- m
 }
 
