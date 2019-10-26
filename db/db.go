@@ -32,7 +32,7 @@ func (d *DataBase) makeRoomBucket(tx *bolt.Tx, roomID string) error {
 }
 
 func (d *DataBase) createAuthUsers() error {
-	err := d.CreateAuthUser("yuri", "123456")
+	err := d.CreateAuthUser("yuri", "a")
 	if err != nil {
 		return err
 	}

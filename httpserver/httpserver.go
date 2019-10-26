@@ -3,8 +3,10 @@ package httpserver
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/yorikya/familychatserver/client"
@@ -13,15 +15,34 @@ import (
 
 //AuthResponse response to client who pass authentication
 type authResponse struct {
-	Error     string `json:"error"`
-	Resources string `json:"resources"`
-	Success   bool   `json:"success"`
+	Error     string   `json:"error"`
+	Resources string   `json:"resources"`
+	Success   bool     `json:"success"`
+	ClientID  string   `json:"clientid"`
+	FileNames []string `json:"filenames"`
 }
 
-func newSuccessAuthResponse(resources string) authResponse {
+func newSuccessAuthResponse(resources, clientID string) authResponse {
+	dir, err := os.Getwd()
+	if err != nil {
+		return newFailedAuthResponse(fmt.Errorf("failed to get pwd for client: '%s', error: %s", clientID, err))
+	}
+
+	files, err := ioutil.ReadDir(fmt.Sprintf("%s%s", dir, resources))
+	if err != nil {
+		return newFailedAuthResponse(fmt.Errorf("failed to get resources pass '%s', error: %s", resources, err))
+	}
+
+	var fileNames []string
+	for _, file := range files {
+		fileNames = append(fileNames, file.Name())
+	}
+
 	return authResponse{
 		Resources: resources,
 		Success:   true,
+		ClientID:  clientID,
+		FileNames: fileNames,
 	}
 }
 
@@ -93,7 +114,7 @@ func authHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.AddClient(client.NewMobileClient(user, strings.Split(r.RemoteAddr, ":")[0], user))
-		handleAuthResponse(w, newSuccessAuthResponse(fmt.Sprintf("%s/rooms/1/", h.GetResourcesPath())))
+		handleAuthResponse(w, newSuccessAuthResponse(fmt.Sprintf("%s/rooms/1/", h.GetResourcesPath()), user))
 	}
 }
 
