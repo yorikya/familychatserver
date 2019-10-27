@@ -70,6 +70,8 @@ func getURLParam(r *http.Request, key string) (string, error) {
 }
 
 func broadcastHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
+	msgID := h.GetLastMessageID()
+	log.Printf("the last message id %d", msgID)
 	return func(w http.ResponseWriter, r *http.Request) {
 		//TODO: Authenticate, add to room list from request ip
 		msg, err := getURLParam(r, "msg")
@@ -85,7 +87,8 @@ func broadcastHandler(h *hub.Hub) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.BroadcastMessage(client.NewBroadcastMessage(id, msg))
+		h.BroadcastMessage(client.NewBroadcastMessage(msgID, id, msg))
+		msgID++
 	}
 }
 

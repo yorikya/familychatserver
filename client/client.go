@@ -20,10 +20,11 @@ type BroadcastMessage struct {
 	Timestamp string
 }
 
-func NewBroadcastMessage(userID, message string) *BroadcastMessage {
+func NewBroadcastMessage(mesegID int, userID, message string) *BroadcastMessage {
 	return &BroadcastMessage{
 		UserID:    userID,
 		Message:   message,
 		Timestamp: time.Now().Format("3:04PM"),
+		MessageID: mesegID,
 	}
 }

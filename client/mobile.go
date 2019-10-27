@@ -20,7 +20,6 @@ type MobileClient struct {
 }
 
 func (c *MobileClient) sendMessage(m *BroadcastMessage) error {
-	log.Println("Message time:", m.Timestamp)
 	url := fmt.Sprintf("http://%s:8080/message?id=%s&ts=%s&msg=%s", c.IP, m.UserID, m.Timestamp, url.QueryEscape(m.Message))
 	resp, err := http.Get(url)
 	if err != nil {

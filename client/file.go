@@ -9,7 +9,6 @@ import (
 
 type FileClient struct {
 	ID        string
-	msgNum    int
 	file      *os.File
 	roomID    string
 	writeChan chan *BroadcastMessage
@@ -26,13 +25,11 @@ func (c *FileClient) run() {
 }
 
 func (c FileClient) writeLine(m *BroadcastMessage) error {
-	m.MessageID = c.msgNum
 	str, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
 	c.file.WriteString(fmt.Sprintf("%s\n", string(str)))
-	c.msgNum++
 	return nil
 }
 

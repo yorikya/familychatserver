@@ -2,11 +2,29 @@ package hub
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/yorikya/familychatserver/client"
 	"github.com/yorikya/familychatserver/db"
 )
+
+func getLastMessageIDFromLogFile(filePath string) int {
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	content, err := ioutil.ReadFile(fmt.Sprintf("%s%s", dir, filePath))
+	if err != nil {
+		log.Printf("failed to open log file '%s', error: %s", filePath, err)
+		return 0
+	}
+
+	return len(strings.Split(string(content), "\n")) - 1
+}
 
 //Hub represent chat hub with clients
 type Hub struct {
@@ -18,6 +36,7 @@ type Hub struct {
 	dataBase         *db.DataBase
 	roomID           string
 	usersRoomPref    string
+	lastMessageID    int
 }
 
 //NewHub return a new Hub
@@ -31,6 +50,7 @@ func NewHub(d *db.DataBase, roomID string) *Hub {
 		dataBase:         d,
 		roomID:           roomID,
 		usersRoomPref:    "usersRoom",
+		lastMessageID:    getLastMessageIDFromLogFile(fmt.Sprintf("/resources/rooms/%s/log.json", roomID)),
 	}
 	//Create users room bucket
 	h.dataBase.CreateBucket(fmt.Sprintf("%s%s", h.usersRoomPref, h.roomID))
@@ -50,6 +70,10 @@ func (h *Hub) Close() {
 	for _, client := range h.clients {
 		client.Close()
 	}
+}
+
+func (h *Hub) GetLastMessageID() int {
+	return h.lastMessageID
 }
 
 //AuthUser authenticated user password on success return true and error nil
